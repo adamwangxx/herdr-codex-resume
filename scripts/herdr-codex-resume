@@ -1,0 +1,111 @@
+#!/bin/sh
+
+set -eu
+
+NAME="herdr-codex-resume"
+
+fail() {
+    printf '%s: %s\n' "$NAME" "$*" >&2
+    exit 2
+}
+
+require_value() {
+    [ -n "$2" ] || fail "$1 is not set; invoke this action from a Herdr-managed pane"
+}
+
+resolve_herdr() {
+    HERDR_BIN=${HERDR_BIN_PATH:-herdr}
+    command -v "$HERDR_BIN" >/dev/null 2>&1 || fail "herdr is not available"
+}
+
+validate_context() {
+    [ "${HERDR_ENV:-}" = "1" ] || fail "HERDR_ENV is not 1"
+    require_value HERDR_WORKSPACE_ID "${HERDR_WORKSPACE_ID:-}"
+    require_value HERDR_TAB_ID "${HERDR_TAB_ID:-}"
+    require_value HERDR_PANE_ID "${HERDR_PANE_ID:-}"
+    require_value HERDR_SOCKET_PATH "${HERDR_SOCKET_PATH:-}"
+
+    resolve_herdr
+    "$HERDR_BIN" pane current --pane "$HERDR_PANE_ID" >/dev/null 2>&1 ||
+        fail "Herdr cannot resolve pane $HERDR_PANE_ID; the invocation context is stale"
+}
+
+absolute_script_path() {
+    script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+    printf '%s/%s\n' "$script_dir" "$(basename "$0")"
+}
+
+open_picker() {
+    validate_context
+    command -v jq >/dev/null 2>&1 || fail "jq is required to read Herdr responses"
+
+    current_json=$("$HERDR_BIN" pane current --pane "$HERDR_PANE_ID") ||
+        fail "cannot inspect Herdr pane $HERDR_PANE_ID"
+    current_cwd=$(printf '%s\n' "$current_json" |
+        jq -r '.result.pane.foreground_cwd // .result.pane.cwd // empty')
+    [ -n "$current_cwd" ] || fail "cannot determine the current pane working directory"
+
+    layout_json=$("$HERDR_BIN" pane layout --pane "$HERDR_PANE_ID") ||
+        fail "cannot inspect the current Herdr layout"
+    pane_width=$(printf '%s\n' "$layout_json" |
+        jq -r --arg pane "$HERDR_PANE_ID" \
+            '.result.layout.panes[] | select(.pane_id == $pane) | .rect.width')
+    case "$pane_width" in
+        ''|*[!0-9]*) fail "cannot determine the current pane width" ;;
+    esac
+
+    direction=down
+    if [ "$pane_width" -ge 120 ]; then
+        direction=right
+    fi
+
+    split_json=$("$HERDR_BIN" pane split --pane "$HERDR_PANE_ID" \
+        --direction "$direction" --cwd "$current_cwd" --focus) ||
+        fail "cannot create the Codex resume pane"
+    resume_pane=$(printf '%s\n' "$split_json" | jq -r '.result.pane.pane_id // empty')
+    [ -n "$resume_pane" ] || fail "Herdr did not return the new resume pane id"
+    [ "$resume_pane" != "$HERDR_PANE_ID" ] || fail "Herdr returned the source pane as the split"
+
+    script_path=$(absolute_script_path)
+    quoted_script=$(printf '%s\n' "$script_path" | jq -Rr '@sh')
+    picker_command="sh $quoted_script picker"
+
+    if ! "$HERDR_BIN" pane run "$resume_pane" "$picker_command"; then
+        "$HERDR_BIN" pane close "$resume_pane" >/dev/null 2>&1 || true
+        fail "cannot start the Codex resume picker in $resume_pane"
+    fi
+
+    printf 'opened Codex resume picker in %s (%s split, cwd %s)\n' \
+        "$resume_pane" "$direction" "$current_cwd"
+}
+
+run_picker() {
+    validate_context
+    command -v codex >/dev/null 2>&1 || fail "codex is not available in PATH"
+
+    if [ -n "${CODEX_THREAD_ID:-}" ]; then
+        fail "new pane inherited Codex thread $CODEX_THREAD_ID; refusing an unsafe nested resume"
+    fi
+
+    exec codex resume
+}
+
+check_context() {
+    validate_context
+    printf 'HERDR_ENV=%s\n' "$HERDR_ENV"
+    printf 'HERDR_WORKSPACE_ID=%s\n' "$HERDR_WORKSPACE_ID"
+    printf 'HERDR_TAB_ID=%s\n' "$HERDR_TAB_ID"
+    printf 'HERDR_PANE_ID=%s\n' "$HERDR_PANE_ID"
+    printf 'HERDR_SOCKET_PATH=%s\n' "$HERDR_SOCKET_PATH"
+    printf 'resume_guard=ready\n'
+}
+
+case "${1:-}" in
+    open) open_picker ;;
+    picker) run_picker ;;
+    check) check_context ;;
+    -h|--help)
+        printf 'Usage: %s open|picker|check\n' "$NAME"
+        ;;
+    *) fail "expected open, picker, or check" ;;
+esac

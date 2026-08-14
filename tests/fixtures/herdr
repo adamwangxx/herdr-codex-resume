@@ -1,0 +1,27 @@
+#!/bin/sh
+
+set -eu
+
+printf '%s\n' "$*" >>"$TEST_HERDR_LOG"
+
+case "$*" in
+    "pane current --pane $HERDR_PANE_ID")
+        printf '{"result":{"pane":{"pane_id":"%s","foreground_cwd":"%s","cwd":"/fallback"}}}\n' \
+            "$HERDR_PANE_ID" "$TEST_PANE_CWD"
+        ;;
+    "pane layout --pane $HERDR_PANE_ID")
+        printf '{"result":{"layout":{"panes":[{"pane_id":"%s","rect":{"width":%s}}]}}}\n' \
+            "$HERDR_PANE_ID" "$TEST_PANE_WIDTH"
+        ;;
+    "pane split --pane $HERDR_PANE_ID "*)
+        printf '{"result":{"pane":{"pane_id":"w1:p2"}}}\n'
+        ;;
+    "pane run w1:p2 "*)
+        ;;
+    "pane close w1:p2")
+        ;;
+    *)
+        printf 'unexpected mock herdr invocation: %s\n' "$*" >&2
+        exit 1
+        ;;
+esac

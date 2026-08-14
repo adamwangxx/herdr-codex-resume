@@ -1,0 +1,3 @@
+#!/bin/sh
+
+printf 'codex args: %s\n' "$*"

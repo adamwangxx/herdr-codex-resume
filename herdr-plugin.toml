@@ -1,0 +1,12 @@
+id = "adam.herdr-codex-resume"
+name = "Codex Resume"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Open the native Codex resume picker in a new Herdr split with live Herdr context."
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "open"
+title = "Codex: resume in a new split"
+contexts = ["pane"]
+command = ["sh", "scripts/herdr-codex-resume", "open"]
