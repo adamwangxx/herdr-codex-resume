@@ -1,5 +1,7 @@
 # Herdr Codex Resume
 
+[![CI](https://github.com/adamwangxx/herdr-codex-resume/actions/workflows/ci.yml/badge.svg)](https://github.com/adamwangxx/herdr-codex-resume/actions/workflows/ci.yml)
+
 A small Herdr plugin that opens the native `codex resume` picker in a new,
 Herdr-managed split.
 
