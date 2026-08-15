@@ -63,4 +63,6 @@ if CODEX_THREAD_ID=019-test sh "$SCRIPT" picker >"$TMP/nested.out" 2>"$TMP/neste
 fi
 assert_contains "$TMP/nested.err" 'refusing an unsafe nested resume'
 
+sh "$ROOT/tests/setup-keybinding.sh"
+
 printf 'all tests passed\n'

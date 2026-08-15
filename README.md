@@ -20,9 +20,11 @@ focuses the new pane, and leaves its shell available after Codex exits.
 
 ```sh
 herdr plugin link "$PWD"
+herdr plugin action invoke adam.herdr-codex-resume.setup-keybinding
 ```
 
-Add a keybinding to `~/.config/herdr/config.toml`:
+The setup action adds the recommended `prefix+alt+r` binding to the active Herdr
+config and reloads Herdr. The resulting TOML entry is:
 
 ```toml
 [[keys.command]]
@@ -32,20 +34,21 @@ command = "adam.herdr-codex-resume.open"
 description = "open Codex resume picker in a new split"
 ```
 
-Then reload Herdr:
-
-```sh
-herdr server reload-config
-```
+The action is safe to run more than once. It keeps an existing binding for this
+plugin unchanged, refuses to replace another command using `prefix+alt+r`, and
+creates a backup before changing an existing config. If the reload fails, it
+restores the previous file.
 
 Install directly from GitHub on another machine:
 
 ```sh
 herdr plugin install adamwangxx/herdr-codex-resume
+herdr plugin action invoke adam.herdr-codex-resume.setup-keybinding
 ```
 
-The keybinding remains a per-machine Herdr setting because plugin manifest v1
-does not install default keys.
+The keybinding remains a per-machine Herdr setting. Plugin manifest v1 does not
+install default keys automatically, so the setup action is an explicit step
+after linking or installing the plugin.
 
 ## Safety model
 
@@ -55,7 +58,8 @@ server to resolve the pane, so stale context fails closed. The picker refuses
 to start if the new pane inherited a `CODEX_THREAD_ID`.
 
 The plugin has no background process, transcript index, network request, or
-build step. It only calls the local `herdr`, `jq`, and `codex` executables.
+build step. The resume action only calls local `herdr`, `jq`, and `codex`; the
+setup action uses Herdr plus standard POSIX file and text utilities.
 
 ## Test
 

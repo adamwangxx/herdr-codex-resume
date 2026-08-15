@@ -35,6 +35,7 @@ jobs:
       - name: Validate shell syntax
         run: |
           sh -n scripts/herdr-codex-resume
+          sh -n scripts/setup-keybinding
           sh -n tests/run.sh
           sh -n tests/fixtures/herdr
           sh -n tests/fixtures/codex

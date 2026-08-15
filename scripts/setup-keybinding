@@ -1,0 +1,211 @@
+#!/bin/sh
+
+set -eu
+
+NAME="herdr-codex-resume"
+ACTION_ID="adam.herdr-codex-resume.open"
+KEY="prefix+alt+r"
+
+fail() {
+    printf '%s: %s\n' "$NAME" "$*" >&2
+    exit 2
+}
+
+resolve_herdr() {
+    HERDR_BIN=${HERDR_BIN_PATH:-herdr}
+    command -v "$HERDR_BIN" >/dev/null 2>&1 || fail "herdr is not available"
+}
+
+resolve_config_path() {
+    if [ -n "${HERDR_CONFIG_PATH:-}" ]; then
+        printf '%s\n' "$HERDR_CONFIG_PATH"
+    elif [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        printf '%s/herdr/config.toml\n' "$XDG_CONFIG_HOME"
+    elif [ -n "${HOME:-}" ]; then
+        printf '%s/.config/herdr/config.toml\n' "$HOME"
+    else
+        fail 'cannot determine Herdr config path'
+    fi
+}
+
+validate_config() {
+    config_to_check=$1
+    HERDR_CONFIG_PATH="$config_to_check" "$HERDR_BIN" config check >/dev/null 2>&1 ||
+        fail "config check failed for $config_to_check"
+}
+
+binding_state() {
+    config_to_read=$1
+    awk -v target_command="$ACTION_ID" -v target_key="$KEY" '
+        function trim(value) {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            return value
+        }
+        function toml_value(line, quote) {
+            sub(/^[[:space:]]*[^=]+=[[:space:]]*/, "", line)
+            line = trim(line)
+            if (substr(line, 1, 1) == "\"") {
+                sub(/^\"/, "", line)
+                sub(/\"[[:space:]]*(#.*)?$/, "", line)
+                return line
+            }
+            quote = sprintf("%c", 39)
+            if (substr(line, 1, 1) == quote) {
+                sub("^" quote, "", line)
+                sub(quote "[[:space:]]*(#.*)?$", "", line)
+                return line
+            }
+            return line
+        }
+        function flush_entry() {
+            if (!in_entry) {
+                return
+            }
+            if (entry_type == "plugin_action" && entry_command == target_command) {
+                found_binding = 1
+                found_binding_key = entry_key
+            } else if (entry_key == target_key && entry_key != "") {
+                found_conflict = 1
+                conflict_command = entry_command
+                conflict_type = entry_type
+            }
+        }
+        /^[[:space:]]*\[\[[[:space:]]*keys[[:space:]]*\.[[:space:]]*command[[:space:]]*\]\][[:space:]]*(#.*)?$/ {
+            flush_entry()
+            in_entry = 1
+            entry_key = ""
+            entry_type = ""
+            entry_command = ""
+            next
+        }
+        /^[[:space:]]*\[\[/ {
+            flush_entry()
+            in_entry = 0
+            next
+        }
+        /^[[:space:]]*\[/ {
+            flush_entry()
+            in_entry = 0
+            next
+        }
+        in_entry && /^[[:space:]]*key[[:space:]]*=/ {
+            entry_key = toml_value($0)
+            next
+        }
+        in_entry && /^[[:space:]]*type[[:space:]]*=/ {
+            entry_type = toml_value($0)
+            next
+        }
+        in_entry && /^[[:space:]]*command[[:space:]]*=/ {
+            entry_command = toml_value($0)
+            next
+        }
+        END {
+            flush_entry()
+            if (found_conflict) {
+                print "conflict\t" conflict_command "\t" conflict_type
+            } else if (found_binding) {
+                print "bound\t" found_binding_key
+            } else {
+                print "missing"
+            }
+        }
+    ' "$config_to_read"
+}
+
+setup_keybinding() {
+    resolve_herdr
+    config_path=$(resolve_config_path)
+    stage_path=""
+    backup_path=""
+    had_config=0
+
+    if [ -e "$config_path" ] || [ -L "$config_path" ]; then
+        [ -f "$config_path" ] || fail "Herdr config is not a regular file: $config_path"
+        [ ! -L "$config_path" ] || fail "refusing to replace symlinked Herdr config: $config_path"
+        had_config=1
+        validate_config "$config_path"
+        state=$(binding_state "$config_path")
+    else
+        state=missing
+    fi
+
+    case "$state" in
+        bound*)
+            printf 'keybinding already configured for %s\n' "$ACTION_ID"
+            return 0
+            ;;
+        conflict*)
+            fail "key $KEY is already used by another command"
+            ;;
+        missing)
+            ;;
+        *)
+            fail "cannot inspect Herdr keybindings"
+            ;;
+    esac
+
+    config_dir=$(dirname "$config_path")
+    mkdir -p "$config_dir"
+    stage_path=$(mktemp "${config_path}.herdr-codex-resume.XXXXXX")
+    trap 'rm -f "$stage_path"' EXIT HUP INT TERM
+
+    if [ "$had_config" -eq 1 ]; then
+        cp -p "$config_path" "$stage_path" || fail "cannot stage Herdr config"
+    fi
+
+    {
+        printf '\n'
+        printf '# Added by herdr-codex-resume setup-keybinding.\n'
+        printf '[[keys.command]]\n'
+        printf 'key = "%s"\n' "$KEY"
+        printf 'type = "plugin_action"\n'
+        printf 'command = "%s"\n' "$ACTION_ID"
+        printf 'description = "open Codex resume picker in a new split"\n'
+    } >>"$stage_path" || fail "cannot write staged Herdr config"
+
+    validate_config "$stage_path"
+
+    if [ "$had_config" -eq 1 ]; then
+        backup_path=$(mktemp "${config_path}.herdr-codex-resume-backup.XXXXXX")
+        cp -p "$config_path" "$backup_path" || {
+            rm -f "$backup_path"
+            fail "cannot back up Herdr config"
+        }
+    fi
+
+    mv "$stage_path" "$config_path" || {
+        [ -z "$backup_path" ] || rm -f "$backup_path"
+        fail "cannot install updated Herdr config"
+    }
+    stage_path=""
+
+    if ! HERDR_CONFIG_PATH="$config_path" "$HERDR_BIN" server reload-config >/dev/null 2>&1; then
+        rollback_path=$(mktemp "${config_path}.herdr-codex-resume-rollback.XXXXXX")
+        rollback_ok=1
+        if [ "$had_config" -eq 1 ]; then
+            cp -p "$backup_path" "$rollback_path" && mv "$rollback_path" "$config_path" || rollback_ok=0
+        else
+            rm -f "$config_path" || rollback_ok=0
+        fi
+        rm -f "$rollback_path"
+        [ "$rollback_ok" -eq 1 ] || fail "reload failed and Herdr config rollback failed"
+        [ -z "$backup_path" ] || rm -f "$backup_path"
+        fail "reload failed; restored Herdr config"
+    fi
+
+    if [ -n "$backup_path" ]; then
+        printf 'installed keybinding %s in %s (backup: %s)\n' \
+            "$KEY" "$config_path" "$backup_path"
+    else
+        printf 'installed keybinding %s in %s\n' "$KEY" "$config_path"
+    fi
+}
+
+case "${1:-}" in
+    '') setup_keybinding ;;
+    -h|--help)
+        printf 'Usage: %s\n' "$NAME"
+        ;;
+    *) fail "unexpected argument: $1" ;;
+esac

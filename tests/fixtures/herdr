@@ -20,6 +20,20 @@ case "$*" in
         ;;
     "pane close w1:p2")
         ;;
+    "config check")
+        case "${HERDR_CONFIG_PATH:-}" in
+            *herdr-codex-resume.*)
+                if [ "${TEST_CONFIG_CHECK_FAIL:-0}" = 1 ]; then
+                    exit 1
+                fi
+                ;;
+        esac
+        ;;
+    "server reload-config")
+        if [ "${TEST_RELOAD_FAIL:-0}" = 1 ]; then
+            exit 1
+        fi
+        ;;
     *)
         printf 'unexpected mock herdr invocation: %s\n' "$*" >&2
         exit 1
