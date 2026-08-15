@@ -19,6 +19,7 @@ focuses the new pane, and leaves its shell available after Codex exits.
 ## Install from a checkout
 
 ```sh
+# Run this from the plugin checkout; $PWD expands to its absolute path.
 herdr plugin link "$PWD"
 herdr plugin action invoke adam.herdr-codex-resume.setup-keybinding
 ```
