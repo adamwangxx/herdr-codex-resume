@@ -3,7 +3,8 @@
 [![CI](https://github.com/adamwangxx/herdr-codex-resume/actions/workflows/ci.yml/badge.svg)](https://github.com/adamwangxx/herdr-codex-resume/actions/workflows/ci.yml)
 
 A small Herdr plugin that opens the native `codex resume` picker in a new,
-Herdr-managed split.
+Herdr-managed split and keeps the live Herdr context available to Codex shell
+tools after a session is resumed.
 
 The action preserves the focused pane's working directory, chooses a right
 split when the pane is at least 120 columns wide and a down split otherwise,
@@ -61,6 +62,11 @@ to start if the new pane inherited a `CODEX_THREAD_ID`.
 The plugin has no background process, transcript index, network request, or
 build step. The resume action only calls local `herdr`, `jq`, and `codex`; the
 setup action uses Herdr plus standard POSIX file and text utilities.
+
+When starting Codex, the plugin explicitly injects only the six live `HERDR_*`
+values needed by Herdr-aware shell tools. It does not enable full parent
+environment inheritance, change secret filtering, or edit the user's global
+Codex configuration.
 
 ## Test
 

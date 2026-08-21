@@ -35,6 +35,13 @@ absolute_script_path() {
     printf '%s/%s\n' "$script_dir" "$(basename "$0")"
 }
 
+codex_env_override() {
+    key=$1
+    value=$2
+    quoted_value=$(jq -Rn --arg value "$value" '$value')
+    printf 'shell_environment_policy.set.%s=%s\n' "$key" "$quoted_value"
+}
+
 open_picker() {
     validate_context
     command -v jq >/dev/null 2>&1 || fail "jq is required to read Herdr responses"
@@ -82,12 +89,27 @@ open_picker() {
 run_picker() {
     validate_context
     command -v codex >/dev/null 2>&1 || fail "codex is not available in PATH"
+    command -v jq >/dev/null 2>&1 || fail "jq is required to encode the Herdr context"
 
     if [ -n "${CODEX_THREAD_ID:-}" ]; then
         fail "new pane inherited Codex thread $CODEX_THREAD_ID; refusing an unsafe nested resume"
     fi
 
-    exec codex resume
+    codex_herdr_env=$(codex_env_override HERDR_ENV "$HERDR_ENV")
+    codex_workspace_id=$(codex_env_override HERDR_WORKSPACE_ID "$HERDR_WORKSPACE_ID")
+    codex_tab_id=$(codex_env_override HERDR_TAB_ID "$HERDR_TAB_ID")
+    codex_pane_id=$(codex_env_override HERDR_PANE_ID "$HERDR_PANE_ID")
+    codex_socket_path=$(codex_env_override HERDR_SOCKET_PATH "$HERDR_SOCKET_PATH")
+    codex_bin_path=$(codex_env_override HERDR_BIN_PATH "$HERDR_BIN")
+
+    exec codex \
+        -c "$codex_herdr_env" \
+        -c "$codex_workspace_id" \
+        -c "$codex_tab_id" \
+        -c "$codex_pane_id" \
+        -c "$codex_socket_path" \
+        -c "$codex_bin_path" \
+        resume
 }
 
 check_context() {

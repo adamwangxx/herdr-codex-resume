@@ -48,10 +48,17 @@ assert_contains "$TEST_HERDR_LOG" \
 : >"$TEST_HERDR_LOG"
 export HERDR_PANE_ID=w1:p2
 picker_output=$(sh "$SCRIPT" picker)
-[ "$picker_output" = 'codex args: resume' ] || {
-    printf 'unexpected picker output: %s\n' "$picker_output" >&2
-    exit 1
-}
+printf '%s\n' "$picker_output" >"$TMP/picker.out"
+assert_contains "$TMP/picker.out" 'codex args:'
+assert_contains "$TMP/picker.out" '-c shell_environment_policy.set.HERDR_ENV="1"'
+assert_contains "$TMP/picker.out" '-c shell_environment_policy.set.HERDR_WORKSPACE_ID="w1"'
+assert_contains "$TMP/picker.out" '-c shell_environment_policy.set.HERDR_TAB_ID="w1:t1"'
+assert_contains "$TMP/picker.out" '-c shell_environment_policy.set.HERDR_PANE_ID="w1:p2"'
+assert_contains "$TMP/picker.out" \
+    "-c shell_environment_policy.set.HERDR_SOCKET_PATH=\"$TMP/herdr.sock\""
+assert_contains "$TMP/picker.out" \
+    "-c shell_environment_policy.set.HERDR_BIN_PATH=\"$TMP/bin/herdr\""
+assert_contains "$TMP/picker.out" ' resume'
 assert_contains "$TEST_HERDR_LOG" 'pane current --pane w1:p2'
 
 check_output=$(sh "$SCRIPT" check)
